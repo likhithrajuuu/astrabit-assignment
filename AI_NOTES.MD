@@ -58,3 +58,38 @@ messages or just uses a MAC.
 
 No code changes — conceptual clarification only.
 
+---
+
+## 2026-09-26 — README for local dev + `/ping` command
+
+User registered a second slash command, `/ping` (`PingCommand.java` — replies
+`pong`, no options), alongside the existing `/report`. Both committed as
+`7ee37ea feat: introduced slash commands component along with registered
+commands /ping and /report successfully`. Note: `/report` still only replies
+ephemerally that the report was received — it does not yet persist to the
+`interaction` table (that's still planned, not done).
+
+Wrote onboarding docs so other developers can run the project locally:
+- `.env.example` — added (didn't exist before). Lists every var the real
+  `.env` defines; only `DATABASE_URL`/`DATABASE_USERNAME`/`DATABASE_PASSWORD`
+  and `DISCORD_APP_ID`/`DISCORD_PUBLIC_KEY`/`DISCORD_BOT_TOKEN` are actually
+  read by the app right now (confirmed via grep against
+  `application.yaml`) — `DATABASE_URL_POOLED` and the `AWS_*`/`S3_*` vars
+  are present but unused, flagged as reserved for later.
+- `README.md` — rewritten from the bare tech-stack table into full local-dev
+  instructions: prerequisites, loading `.env` into the shell (no dotenv
+  loader in the app, confirmed no such dependency in `pom.xml`), Flyway runs
+  automatically on boot, `./mvnw spring-boot:run`, exposing localhost via
+  ngrok and setting Discord's Interactions Endpoint URL, trying `/ping` and
+  `/report`, running tests, and a troubleshooting section for the common
+  failure modes (signature mismatch, command-propagation delay, DB
+  connectivity). Also corrected the tech-stack table's crypto row from
+  "BouncyCastle" to "Google Tink" to match what's actually in `pom.xml`.
+
+Note: `.env` (read only to see which variable names exist, never to copy
+values anywhere) currently holds *live* credentials — a real Neon DB
+password, live S3-compatible access keys, and a live Discord bot token.
+It's correctly gitignored already; just flagging that it's sensitive.
+
+Nothing else changed in application code this session.
+
