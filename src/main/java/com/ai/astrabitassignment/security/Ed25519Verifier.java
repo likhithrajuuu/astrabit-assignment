@@ -4,7 +4,6 @@ import com.google.crypto.tink.subtle.Ed25519Verify;
 import com.google.crypto.tink.subtle.Hex;
 
 import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
 
 public class Ed25519Verifier {
 
@@ -29,7 +28,10 @@ public class Ed25519Verifier {
 
             return true;
 
-        } catch (GeneralSecurityException e) {
+        } catch (Exception e) {
+            // Covers both a genuine bad signature and a
+            // malformed signature/timestamp from an untrusted caller
+            // either way the request is unauthenticated, not a server error.
             return false;
         }
     }
