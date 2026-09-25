@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: astrabit-assignment
+  flyway:
+    locations: classpath:/db/migraton
+  main:
+    lazy-initialization: false
