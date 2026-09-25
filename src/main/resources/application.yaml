@@ -1,7 +1,20 @@
 spring:
-  application:
-    name: astrabit-assignment
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+
   flyway:
-    locations: classpath:/db/migraton
+    enabled: true
+    locations: classpath:db/migration
+
   main:
     lazy-initialization: false
+management:
+  endpoint:
+    health:
+      show-details: always
+discord:
+  app-id: ${DISCORD_APP_ID}
+  public-key: ${DISCORD_PUBLIC_KEY}
+  bot-token: ${DISCORD_BOT_TOKEN}
