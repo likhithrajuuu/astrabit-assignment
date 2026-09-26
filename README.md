@@ -14,7 +14,7 @@ and reply. No gateway/websocket connection is used.
 | Discord   | Discord4j (REST only — no gateway connection)           | Used to register slash commands and call the Discord API |
 | Crypto    | Google Tink `Ed25519Verify`                             | Verifies Discord's interaction signatures without hand-rolling raw-key parsing |
 | Hosting   | Render free web service (Docker) — planned              | Supports JVM apps without a card |
-| AI        | Groq (Llama) or Gemini free tier — planned               | For report triage |
+| AI        | Gemini via Spring AI `ChatClient` (`spring-ai-starter-model-google-genai`) | Powers `/ask`, `/roast`, and `/report`'s triage summary |
 
 See [AI_NOTES.MD](AI_NOTES.MD) for a running log of design decisions.
 
@@ -60,6 +60,8 @@ Fill in `.env`:
 | `DISCORD_APP_ID` | Discord Developer Portal → your app → **General Information** → Application ID |
 | `DISCORD_PUBLIC_KEY` | Same page → **Public Key** |
 | `DISCORD_BOT_TOKEN` | **Bot** tab → Reset/copy **Token** |
+| `GEMINI_API_KEY` | Free-tier key from [Google AI Studio](https://aistudio.google.com/apikey) |
+| `GEMINI_PROJECT_NUMBER` | The Google Cloud project number associated with that key |
 
 `DATABASE_URL_POOLED` and the `AWS_*`/`S3_*` variables are reserved for
 upcoming features and aren't read by the app yet — you can leave them blank.
@@ -132,10 +134,25 @@ Registered commands:
 
 - **`/ping`** — replies `pong`. Quick check that the endpoint and signature
   verification are working end-to-end.
-- **`/report <details>`** — accepts free text and replies ephemerally that
-  the report was received and will be reviewed. (Persisting reports to the
-  `interaction` table and running them through the rule engine is planned,
-  not wired up yet.)
+- **`/8ball <question>`** — Magic 8-ball; replies immediately with a random
+  canned answer.
+- **`/roll [sides]`** — rolls a random number in `1..sides` (default 6,
+  clamped to `2..1,000,000`); replies immediately.
+- **`/ask <question>`** — general Q&A, answered by Gemini via Spring AI's
+  `ChatClient`. Replies with a deferred ack, then patches in the AI's answer
+  a moment later (needs `GEMINI_API_KEY`/`GEMINI_PROJECT_NUMBER` set).
+- **`/roast <target>`** — same deferred pattern as `/ask`, but prompts
+  Gemini for a playful roast of whatever you pass in.
+- **`/report <details>`** — meant to persist the report and run it through
+  Gemini for a triage summary, same deferred pattern. **Currently broken**
+  as of 2026-09-26 — the AI call will always fail and fall back to an error
+  message. See the "2026-09-26 — Diagnosed" entries in
+  [AI_NOTES.MD](AI_NOTES.MD) for the specific bugs (a Jackson 2/3 mismatch,
+  a wrong `@Value` import, and a wrong property key) — none fixed yet.
+
+Every command handler also updates that interaction's row in the
+`interaction` table (inserted by `InteractionService` before dispatch) to
+`status = 'PROCESSED'` once it's done.
 
 Note: global commands can take up to ~1 hour to show up for the first time;
 edits to an existing command propagate faster.

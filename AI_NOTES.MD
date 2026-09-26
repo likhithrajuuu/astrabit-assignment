@@ -298,3 +298,56 @@ than assuming from the import name alone.
 Nothing changed in the repo this session — diagnosis only, at the user's
 explicit request.
 
+---
+
+## 2026-09-26 — Four more commands: `/ask`, `/roast`, `/8ball`, `/roll`
+
+User added, and also some supporting pieces around them:
+- **`AskCommand`** — `/ask <question>`, general Q&A via Spring AI's
+  `ChatClient` (built from an injected `ChatClient.Builder`). Deferred
+  response (type 5) + async Gemini call + PATCH follow-up, same pattern as
+  `ReportCommand`. Marks the interaction `PROCESSED` via a raw
+  `JdbcTemplate` update matching `payload->>'id' = ?` against the persisted
+  JSONB payload.
+- **`RoastCommand`** — `/roast <target>`, same deferred+follow-up shape,
+  prompts Gemini for a playful roast instead of an answer.
+- **`EightBallCommand`** — `/8ball <question>`, immediate reply (type 4)
+  from a canned list of Magic-8-ball answers, no AI call.
+- **`RollCommand`** — `/roll [sides]`, immediate reply, random number in
+  `1..sides` (default 6, clamped `2..1,000,000`), no AI call.
+- **`AiConfig`** (new) — defines a `ChatClient` `@Bean` from
+  `ChatClient.Builder`. Not actually consumed by Ask/Roast (they each build
+  their own `ChatClient` from the injected `Builder` directly) — currently
+  unused, presumably for something later.
+- **`AiTriageResult`** (new) — a plain `record(summary, tagsJson, severity)`
+  DTO, not wired into anything yet — looks like a stub for the AI-triage
+  pipeline discussed on 2026-09-26 (the `/report` Q&A entry above).
+- **`V3__modifying_interaction_table.sql`** (new migration) — changes
+  `interaction.severity` from `INTEGER` to `VARCHAR(50)`, so severity will
+  be stored as a label rather than a number.
+
+**Important: `AskCommand`/`RoastCommand` correctly use Jackson 3**
+(`tools.jackson.databind.json.JsonMapper`) — unlike the still-broken
+`ReportCommand`, which was diagnosed earlier today and has not been fixed.
+Also sidestep the missing-`HttpClient`-bean problem `ReportCommand` has by
+constructing their own `HttpClient.newHttpClient()` as a field default
+instead of asking Spring to inject one. So of the three AI-backed commands,
+`/ask` and `/roast` should actually work (assuming `GEMINI_API_KEY`/
+`GEMINI_PROJECT_NUMBER` are set); `/report` still won't, per the diagnosis
+above — not re-verified by compiling+running against a real key in this
+session.
+
+Verified the whole module still compiles clean with JDK 21
+(`BUILD SUCCESS`, 23 source files; one pre-existing deprecation warning on
+`ReportCommand.java`, not a new one from this change).
+
+**Docs updated** (this is what was actually asked for this turn):
+- `.env.example` — added `GEMINI_API_KEY` / `GEMINI_PROJECT_NUMBER`.
+- `README.md` — Tech Stack AI row updated from "planned" to actually
+  implemented; env var table got the two Gemini vars (with a link to Google
+  AI Studio for the free-tier key); the command list in "5. Try it in
+  Discord" now lists all six registered commands with accurate
+  descriptions, including an explicit "currently broken" note on `/report`
+  pointing back at the diagnosis entries above, so the README doesn't claim
+  something works that doesn't.
+
