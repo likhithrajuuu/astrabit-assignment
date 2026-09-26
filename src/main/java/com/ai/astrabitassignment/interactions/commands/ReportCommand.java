@@ -65,6 +65,21 @@ public class ReportCommand implements SlashCommand {
 
     @Override
     public Map<String, Object> handle(Map<String, Object> interaction) {
+        String discordInteractionId = (String) interaction.get("id");
+
+        int rowsUpdated = jdbcTemplate.update(
+                "UPDATE interaction SET status = 'PROCESSING' WHERE payload->>'id' = ? AND status = 'RECEIVED'",
+                discordInteractionId
+        );
+
+        if (rowsUpdated == 0) {
+            System.out.println("Duplicate request dropped for interaction: " + discordInteractionId);
+            return Map.of(
+                    "type", 5,
+                    "data", Map.of("flags", 64)
+            );
+        }
+
         String details = stringOption(interaction, OPTION_DETAILS).orElse("(no details provided)");
         String reporterId = invokingUserId(interaction)
                 .orElseThrow(() -> new IllegalStateException(
@@ -76,7 +91,7 @@ public class ReportCommand implements SlashCommand {
                 ));
         String token = (String) interaction.get("token");
         String applicationId = (String) interaction.get("application_id");
-        String discordInteractionId = (String) interaction.get("id");
+
         CompletableFuture.runAsync(() -> {
             try {
                 AiTriageResult aiResult = callGeminiAi(details);
