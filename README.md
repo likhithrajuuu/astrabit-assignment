@@ -20,7 +20,26 @@ See [AI_NOTES.MD](AI_NOTES.MD) for a running log of design decisions.
 
 ## Prerequisites
 
-- **JDK 21** (the repo uses the Maven wrapper, so you don't need Maven installed separately)
+- **JDK 21 — exactly this, not whatever's newest.** The project uses Lombok
+  (`@Getter`/`@Setter`/`@NoArgsConstructor`/etc.), which hooks into javac's
+  *private* internals via reflection to generate code at compile time.
+  Lombok needs its own release to catch up every time those internals shift
+  on a new JDK, and it hasn't caught up to JDK 26/27 yet. Building with
+  those newer JDKs fails with a cryptic
+  `java.lang.ExceptionInInitializerError` /
+  `ClassNotFoundException: com.sun.tools.javac.tree.EndPosTable` — that's
+  this issue, not a Lombok misconfiguration. If `java -version` shows
+  anything other than 21, install it as a *side-by-side* JDK (don't replace
+  your system default) and point `JAVA_HOME` at it just for this project:
+
+  ```bash
+  brew install openjdk@21
+  export JAVA_HOME=$(brew --prefix openjdk@21)/libexec/openjdk.jdk/Contents/Home
+  ```
+
+  Run that `export` in every terminal you build/run this project from (or
+  set Project SDK → 21 in your IDE). The repo uses the Maven wrapper, so you
+  don't need Maven installed separately — just a JDK 21 on `JAVA_HOME`.
 - A **Postgres database** — the free tier of [Neon](https://neon.tech) works well
 - A **Discord Application** — create one at the
   [Discord Developer Portal](https://discord.com/developers/applications)
@@ -62,6 +81,9 @@ Nothing to run by hand — Flyway applies everything under
 Just make sure `DATABASE_URL` points at a reachable, empty Postgres database.
 
 ## 3. Run the app
+
+Make sure `JAVA_HOME` points at JDK 21 in this terminal too (see
+Prerequisites) — same shell, same `set -a && source .env` step:
 
 ```bash
 ./mvnw spring-boot:run

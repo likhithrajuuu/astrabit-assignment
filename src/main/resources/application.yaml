@@ -10,6 +10,11 @@ spring:
 
   main:
     lazy-initialization: false
+  ai:
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY}
+        project-id: ${GEMINI_PROJECT_NUMBER}
 management:
   endpoint:
     health:

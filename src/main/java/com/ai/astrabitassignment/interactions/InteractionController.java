@@ -12,7 +12,6 @@ import java.util.Map;
  * Discord's single HTTP interactions endpoint. Every click, slash command and
  * PING Discord sends lands here; {@link DiscordSignatureFilter} has already
  * verified the request's Ed25519 signature by the time it reaches this method.
- *
  */
 @RestController
 @RequestMapping("/api/interaction")
@@ -22,19 +21,40 @@ public class InteractionController {
     private static final int APPLICATION_COMMAND = 2;
 
     private final SlashCommandDispatcher dispatcher;
+    private final InteractionService interactionService;
 
-    public InteractionController(SlashCommandDispatcher dispatcher) {
+    public InteractionController(
+            SlashCommandDispatcher dispatcher,
+            InteractionService interactionService
+    ) {
         this.dispatcher = dispatcher;
+        this.interactionService = interactionService;
     }
 
     @PostMapping
-    public Map<String, Object> receiveInteraction(@RequestBody Map<String, Object> interaction) {
-        int type = interaction.get("type") instanceof Number number ? number.intValue() : -1;
+    public Map<String, Object> receiveInteraction(
+            @RequestBody Map<String, Object> interaction
+    ) {
+        int type = interaction.get("type") instanceof Number number
+                ? number.intValue()
+                : -1;
 
         return switch (type) {
-            case PING -> InteractionResponses.pong();
-            case APPLICATION_COMMAND -> dispatcher.dispatch(interaction);
-            default -> InteractionResponses.ephemeralMessage("This interaction type isn't supported yet.");
+
+            case PING ->
+                    InteractionResponses.pong();
+
+            case APPLICATION_COMMAND -> {
+                //Persisting the interaction of the discord server
+                interactionService.save(interaction);
+
+                yield dispatcher.dispatch(interaction);
+            }
+
+            default ->
+                    InteractionResponses.ephemeralMessage(
+                            "This interaction type isn't supported yet."
+                    );
         };
     }
 }
