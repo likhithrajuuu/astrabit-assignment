@@ -1,7 +1,7 @@
 package com.ai.astrabitassignment.interactions.commands;
 
-
 import com.ai.astrabitassignment.entities.AiTriageResult;
+import com.ai.astrabitassignment.services.NotificationMirrorService;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.jdbc.core.JdbcTemplate;
 import tools.jackson.databind.JsonNode;
@@ -20,11 +20,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
-/**
- * {@code /report} - lets a guild member flag a message or situation for
- * moderator review. This is the seed command for the triage pipeline:
- * persistence, rule matching and AI severity scoring land in later phases.
- */
 @Component
 public class ReportCommand implements SlashCommand {
 
@@ -38,10 +33,12 @@ public class ReportCommand implements SlashCommand {
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ChatClient chatClient;
     private final JdbcTemplate jdbcTemplate;
+    private final NotificationMirrorService mirrorService;
 
-    public ReportCommand(ChatClient.Builder builder, JdbcTemplate jdbcTemplate) {
+    public ReportCommand(ChatClient.Builder builder, JdbcTemplate jdbcTemplate, NotificationMirrorService mirrorService) {
         this.chatClient = builder.build();
         this.jdbcTemplate = jdbcTemplate;
+        this.mirrorService = mirrorService;
     }
 
     @Override
@@ -66,34 +63,25 @@ public class ReportCommand implements SlashCommand {
     @Override
     public Map<String, Object> handle(Map<String, Object> interaction) {
         String discordInteractionId = (String) interaction.get("id");
-
-        int rowsUpdated = jdbcTemplate.update(
-                "UPDATE interaction SET status = 'PROCESSING' WHERE payload->>'id' = ? AND status = 'RECEIVED'",
-                discordInteractionId
-        );
-
-        if (rowsUpdated == 0) {
-            System.out.println("Duplicate request dropped for interaction: " + discordInteractionId);
-            return Map.of(
-                    "type", 5,
-                    "data", Map.of("flags", 64)
-            );
-        }
-
         String details = stringOption(interaction, OPTION_DETAILS).orElse("(no details provided)");
-        String reporterId = invokingUserId(interaction)
-                .orElseThrow(() -> new IllegalStateException(
-                        "Discord user ID is missing from interaction"
-                ));
-        String reporterUsername = invokingUsername(interaction)
-                .orElseThrow(() -> new IllegalStateException(
-                        "Discord username is missing from interaction"
-                ));
+        String reporterId = invokingUserId(interaction).orElseThrow(() -> new IllegalStateException("Discord user ID is missing from interaction"));
+        String reporterUsername = invokingUsername(interaction).orElseThrow(() -> new IllegalStateException("Discord username is missing from interaction"));
         String token = (String) interaction.get("token");
         String applicationId = (String) interaction.get("application_id");
 
         CompletableFuture.runAsync(() -> {
             try {
+                Thread.sleep(1500);
+
+                int rowsUpdated = jdbcTemplate.update(
+                        "UPDATE interaction SET status = 'PROCESSING' WHERE payload->>'id' = ? AND status = 'RECEIVED'",
+                        discordInteractionId
+                );
+
+                if (rowsUpdated == 0) {
+                    return;
+                }
+
                 AiTriageResult aiResult = callGeminiAi(details);
 
                 jdbcTemplate.update(
@@ -109,12 +97,24 @@ public class ReportCommand implements SlashCommand {
 
                 sendDiscordFollowUp(applicationId, token, finalMessage);
 
+                mirrorService.mirrorCommandExecution(
+                        name(),
+                        reporterUsername,
+                        "**AI Summary:** " + aiResult.summary() + "\n**Report Details:** " + details,
+                        aiResult.severity()
+                );
+
             } catch (Exception e) {
                 e.printStackTrace();
                 try {
                     sendDiscordFollowUp(applicationId, token, "Report received, but AI analysis failed: " + e.getMessage());
+                    mirrorService.mirrorCommandExecution(
+                            name(),
+                            reporterUsername,
+                            "Failed report processing: " + e.getMessage(),
+                            "CRITICAL"
+                    );
                 } catch (Exception fallbackException) {
-                    System.err.println("CRITICAL: Failed to send fallback error message.");
                     fallbackException.printStackTrace();
                 }
             }
@@ -166,7 +166,6 @@ public class ReportCommand implements SlashCommand {
         return Optional.empty();
     }
 
-
     private AiTriageResult callGeminiAi(String userDetails) throws Exception {
         String promptText = """
             You are a moderation bot. Analyze this report: "%s"
@@ -188,7 +187,6 @@ public class ReportCommand implements SlashCommand {
         return new AiTriageResult(summary, tagsJson, severity);
     }
 
-
     private void sendDiscordFollowUp(String applicationId, String token, String content) throws Exception {
         String url = "https://discord.com/api/v10/webhooks/" + applicationId + "/" + token + "/messages/@original";
         Map<String, String> requestBody = Map.of("content", content);
@@ -197,7 +195,7 @@ public class ReportCommand implements SlashCommand {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
-                .method("PATCH", HttpRequest.BodyPublishers.ofString(jsonBody)) // Must be PATCH
+                .method("PATCH", HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
