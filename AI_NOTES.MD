@@ -464,3 +464,63 @@ that discussion, for whoever picks this up:
 
 Nothing implemented — purely a design conversation, per Rule 0.
 
+---
+
+## 2026-09-27 — Q&A: does `@Transactional` give multi-server isolation?
+
+User asked whether using `@Transactional` in `InteractionService` means the
+app has multi-server support (each connected Discord server isolated, with
+its own config). Corrected: two unrelated things were being conflated.
+
+- `@Transactional` is a database-consistency mechanism only — it wraps
+  `InteractionService.save()`'s app_user/guild upserts + interaction insert
+  in one atomic unit. Nothing to do with keeping different guilds' data
+  apart.
+- What *does* provide per-guild data separation is the schema:
+  `guild.id` = the Discord guild ID, and `interaction`/`rule`/
+  `command_config` all carry a `guild_id` FK back to it.
+  `InteractionService.save()` correctly auto-provisions a distinct `guild`
+  row per Discord server and stamps every `interaction` with the real
+  `guild_id` — so at the storage level, yes, rows are genuinely separated.
+- "With its own config" is **not** true yet, though — verified with
+  `grep -rn "command_config|mirror_webhook_enc|CommandConfig" src/main/java/`
+  → zero matches. Nothing reads `command_config` or `guild.mirror_webhook_enc`
+  anywhere. Every command's behavior is currently hardcoded/global across
+  every guild. Most concretely: `NotificationMirrorService` mirrors *every*
+  guild's `/report` output to one single `DISCORD_WEBHOOK_URL` env var —
+  a global setting — not the per-guild `mirror_webhook_enc` column the
+  schema clearly intends for this. So two different servers running this
+  bot today would have their reports land in the same mirror channel.
+
+No code changes — conceptual clarification only.
+
+---
+
+## 2026-09-27 — Bug found and fixed by user: `/report` modal always reopened itself
+
+Following up on the "something went wrong" `/report` modal bug diagnosed
+earlier: user found and fixed it themselves. Confirms the diagnosis was
+exactly right — `ReportCommand.handle()` now branches on
+`interaction.get("type")`:
+- `type == 2` (the initial `/report` invocation) → `openReportModal()`,
+  same modal-open payload as before.
+- `type == 5` (the modal submission) → `processModalSubmission(interaction)`,
+  which now actually extracts the typed value by walking
+  `data.components[0].components[0].value`, and hands off to a **new**
+  `ReportProcessingService` (`src/main/java/.../services/`) that does the
+  async work: the same `RECEIVED`→`PROCESSING`→`PROCESSED` dance guarded by
+  `AND status = 'RECEIVED'`, the Gemini triage call, the Discord follow-up
+  PATCH, and the `NotificationMirrorService` mirror call — this is
+  essentially the old triage logic from `ReportCommand` (see the
+  2026-09-27 "`/report`'s bugs are now all fixed" entry above), moved out
+  into its own service and triggered from the submission path instead of
+  directly from the slash command.
+- The submission response is now `Map.of("type", 5)` — deferred, **not**
+  ephemeral (no `flags: 64`) — a change from the pre-modal version, which
+  was an ephemeral deferred ack. Worth knowing if the visibility behavior
+  looks different than expected (the "thinking…" ack and the final result
+  are now visible to the whole channel, not just the reporter).
+
+Confirmed via reading the code, not by running the app against live
+Discord/Gemini credentials.
+

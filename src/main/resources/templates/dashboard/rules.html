@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Rules - Astrabot Dashboard</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1e1f22; color: #e3e5e8; margin: 0; padding: 32px; }
+        .wrap { max-width: 880px; margin: 0 auto; }
+        h1 { font-size: 20px; }
+        h2 { font-size: 15px; color: #949ba4; margin-top: 32px; }
+        nav a { color: #949ba4; text-decoration: none; margin-right: 16px; }
+        nav a.active { color: #e3e5e8; font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #3a3c42; font-size: 14px; }
+        th { color: #949ba4; font-weight: 600; text-transform: uppercase; font-size: 11px; }
+        input[type=text], input[type=number], select { box-sizing: border-box; width: 100%; padding: 6px 8px; border-radius: 4px; border: 1px solid #1e1f22; background: #1e1f22; color: #e3e5e8; }
+        button { padding: 6px 14px; border-radius: 4px; border: none; background: #5865f2; color: white; font-weight: 600; cursor: pointer; }
+        button.danger { background: #da373c; }
+        button:hover { opacity: 0.9; }
+        .add-form { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)) auto; gap: 8px; align-items: end; margin-top: 12px; }
+        .add-form > div { min-width: 0; }
+        .add-form label { display: block; font-size: 11px; color: #949ba4; margin-bottom: 4px; }
+        .empty { color: #949ba4; font-size: 14px; margin-top: 12px; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <h1>Astrabot Dashboard &middot; <span th:text="${guildId}">guildId</span></h1>
+    <nav>
+        <a th:href="@{/dashboard/{id}/commands(id=${guildId})}">Commands</a>
+        <a class="active" th:href="@{/dashboard/{id}/rules(id=${guildId})}">Rules</a>
+    </nav>
+
+    <table th:if="${not #lists.isEmpty(rules)}">
+        <thead>
+        <tr>
+            <th>Priority</th>
+            <th>Command</th>
+            <th>Match type</th>
+            <th>Pattern</th>
+            <th>Action</th>
+            <th>Params</th>
+            <th></th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="rule : ${rules}">
+            <td th:text="${rule.priority}">0</td>
+            <td class="cmd-name" th:text="'/' + ${rule.commandName}">/command</td>
+            <td th:text="${rule.matchType}">KEYWORD</td>
+            <td th:text="${rule.pattern}">pattern</td>
+            <td th:text="${rule.action}">ACTION</td>
+            <td th:text="${rule.params}">{}</td>
+            <td>
+                <form th:action="@{/dashboard/{id}/rules/{ruleId}/delete(id=${guildId},ruleId=${rule.id})}" method="post">
+                    <button type="submit" class="danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+    <p class="empty" th:if="${#lists.isEmpty(rules)}">No rules yet for this server.</p>
+
+    <h2>Add a rule</h2>
+    <form class="add-form" th:action="@{/dashboard/{id}/rules(id=${guildId})}" th:object="${newRule}" method="post">
+        <div>
+            <label>Command</label>
+            <select th:field="*{commandName}">
+                <option th:each="name : ${commandNames}" th:value="${name}" th:text="'/' + ${name}"></option>
+            </select>
+        </div>
+        <div>
+            <label>Match type</label>
+            <select th:field="*{matchType}">
+                <option th:each="mt : ${matchTypes}" th:value="${mt}" th:text="${mt}"></option>
+            </select>
+        </div>
+        <div>
+            <label>Pattern</label>
+            <input type="text" th:field="*{pattern}" placeholder="e.g. spam or a regex" required="required" />
+        </div>
+        <div>
+            <label>Action</label>
+            <select th:field="*{action}">
+                <option th:each="a : ${actions}" th:value="${a}" th:text="${a}"></option>
+            </select>
+        </div>
+        <div>
+            <label>Params (JSON)</label>
+            <input type="text" th:field="*{params}" placeholder='{}' />
+        </div>
+        <div>
+            <label>Priority</label>
+            <input type="number" th:field="*{priority}" value="0" />
+        </div>
+        <button type="submit">Add rule</button>
+    </form>
+</div>
+</body>
+</html>
