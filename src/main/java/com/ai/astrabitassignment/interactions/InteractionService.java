@@ -1,7 +1,6 @@
 package com.ai.astrabitassignment.interactions;
 
 import com.ai.astrabitassignment.entities.Interaction;
-import discord4j.core.object.entity.Guild;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.transaction.Transactional;
@@ -30,15 +29,13 @@ public class InteractionService {
     }
 
     @Transactional
-    public  Interaction save(Map<String, Object> interaction) {
+    public Interaction save(Map<String, Object> interaction) {
         String guildId = extractGuildId(interaction);
         String discordUserId = extractUserId(interaction);
         String discordUserName = extractUserName(interaction);
-//        String safeOwnerId = (userId != null) ? userId : "UNKNOWN_OWNER";
+
         if (guildId != null && discordUserId != null) {
 
-            // 1. Upsert the App User (with a dummy password) and get their internal BIGINT id
-            // We use discord_user_id as the unique constraint check
             Long internalAppUserId = (Long) em.createNativeQuery(
                             "INSERT INTO app_user (username, password_hash, discord_user_id) " +
                                     "VALUES (:username, 'auto_generated_no_login', :discordId) " +
@@ -49,7 +46,6 @@ public class InteractionService {
                     .setParameter("discordId", discordUserId)
                     .getSingleResult();
 
-            // 2. Upsert the Guild using the valid internal App User ID
             em.createNativeQuery(
                             "INSERT INTO guild (id, name, owner_user_id) " +
                                     "VALUES (:guildId, 'Auto-provisioned Guild', :ownerId) " +
@@ -59,6 +55,7 @@ public class InteractionService {
                     .setParameter("ownerId", internalAppUserId)
                     .executeUpdate();
         }
+
         Interaction entity = new Interaction();
 
         entity.setGuildId(guildId);
@@ -76,23 +73,17 @@ public class InteractionService {
     private String extractGuildId(Map<String, Object> interaction) {
         Object guildId = interaction.get("guild_id");
 
-        return guildId != null
-                ? String.valueOf(guildId)
-                : null;
+        return guildId != null ? String.valueOf(guildId) : null;
     }
 
     private String extractType(Map<String, Object> interaction) {
         Object type = interaction.get("type");
 
-        return type != null
-                ? String.valueOf(type)
-                : "UNKNOWN";
+        return type != null ? String.valueOf(type) : "UNKNOWN";
     }
 
     private String extractCommandName(Map<String, Object> interaction) {
-        if (interaction.get("data") instanceof Map<?, ?> data
-                && data.get("name") != null) {
-
+        if (interaction.get("data") instanceof Map<?, ?> data && data.get("name") != null) {
             return String.valueOf(data.get("name"));
         }
 
@@ -120,10 +111,7 @@ public class InteractionService {
     }
 
     private Map<?, ?> extractUser(Map<String, Object> interaction) {
-
-        if (interaction.get("member") instanceof Map<?, ?> member
-                && member.get("user") instanceof Map<?, ?> user) {
-
+        if (interaction.get("member") instanceof Map<?, ?> member && member.get("user") instanceof Map<?, ?> user) {
             return user;
         }
 
@@ -138,10 +126,7 @@ public class InteractionService {
         try {
             return objectMapper.writeValueAsString(interaction);
         } catch (JacksonException e) {
-            throw new IllegalStateException(
-                    "Failed to serialize Discord interaction",
-                    e
-            );
+            throw new IllegalStateException("Failed to serialize Discord interaction", e);
         }
     }
 }

@@ -1,44 +1,23 @@
 package com.ai.astrabitassignment.interactions.commands;
 
-import com.ai.astrabitassignment.entities.AiTriageResult;
-import com.ai.astrabitassignment.services.NotificationMirrorService;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.jdbc.core.JdbcTemplate;
-import tools.jackson.databind.JsonNode;
-import org.springframework.beans.factory.annotation.Value;
-import discord4j.discordjson.json.ApplicationCommandOptionData;
+import com.ai.astrabitassignment.interactions.InteractionResponses;
+import com.ai.astrabitassignment.services.ReportProcessingService;
 import discord4j.discordjson.json.ApplicationCommandRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import tools.jackson.databind.json.JsonMapper;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 
 @Component
 public class ReportCommand implements SlashCommand {
 
-    @Value("${spring.ai.google.genai.api-key}")
-    private String geminiApiKey;
+    private static final Logger log = LoggerFactory.getLogger(ReportCommand.class);
+    private final ReportProcessingService processingService;
 
-    private static final String OPTION_DETAILS = "details";
-    private static final int OPTION_TYPE_STRING = 3;
-
-    private final JsonMapper jsonMapper = JsonMapper.builder().build();
-    private final HttpClient httpClient = HttpClient.newHttpClient();
-    private final ChatClient chatClient;
-    private final JdbcTemplate jdbcTemplate;
-    private final NotificationMirrorService mirrorService;
-
-    public ReportCommand(ChatClient.Builder builder, JdbcTemplate jdbcTemplate, NotificationMirrorService mirrorService) {
-        this.chatClient = builder.build();
-        this.jdbcTemplate = jdbcTemplate;
-        this.mirrorService = mirrorService;
+    public ReportCommand(ReportProcessingService processingService) {
+        this.processingService = processingService;
     }
 
     @Override
@@ -50,158 +29,89 @@ public class ReportCommand implements SlashCommand {
     public ApplicationCommandRequest definition() {
         return ApplicationCommandRequest.builder()
                 .name(name())
-                .description("Report a message or situation for moderator review")
-                .addOption(ApplicationCommandOptionData.builder()
-                        .type(OPTION_TYPE_STRING)
-                        .name(OPTION_DETAILS)
-                        .description("What should moderators look into?")
-                        .required(true)
-                        .build())
+                .description("Open a form to report a message or situation to moderators")
                 .build();
     }
 
     @Override
     public Map<String, Object> handle(Map<String, Object> interaction) {
-        String discordInteractionId = (String) interaction.get("id");
-        String details = stringOption(interaction, OPTION_DETAILS).orElse("(no details provided)");
-        String reporterId = invokingUserId(interaction).orElseThrow(() -> new IllegalStateException("Discord user ID is missing from interaction"));
-        String reporterUsername = invokingUsername(interaction).orElseThrow(() -> new IllegalStateException("Discord username is missing from interaction"));
-        String token = (String) interaction.get("token");
-        String applicationId = (String) interaction.get("application_id");
+        // Extract interaction type safely
+        int type = interaction.get("type") instanceof Number number
+                ? number.intValue()
+                : -1;
 
-        CompletableFuture.runAsync(() -> {
-            try {
-                Thread.sleep(1500);
+        if (type == 2) { // APPLICATION_COMMAND (/report)
+            log.info("Received /report command; opening modal.");
+            return openReportModal();
+        } else if (type == 5) { // MODAL_SUBMIT
+            log.info("Received report_modal submission; processing asynchronously.");
+            return processModalSubmission(interaction);
+        }
 
-                int rowsUpdated = jdbcTemplate.update(
-                        "UPDATE interaction SET status = 'PROCESSING' WHERE payload->>'id' = ? AND status = 'RECEIVED'",
-                        discordInteractionId
-                );
+        log.warn("ReportCommand received unsupported interaction type: {}", type);
+        return InteractionResponses.ephemeralMessage("Unsupported interaction type.");
+    }
 
-                if (rowsUpdated == 0) {
-                    return;
-                }
-
-                AiTriageResult aiResult = callGeminiAi(details);
-
-                jdbcTemplate.update(
-                        "UPDATE interaction SET ai_summary = ?, ai_tags = ?::jsonb, severity = ?, status = 'PROCESSED' WHERE payload->>'id' = ?",
-                        aiResult.summary(),
-                        aiResult.tagsJson(),
-                        aiResult.severity(),
-                        discordInteractionId
-                );
-
-                String finalMessage = "Thanks **%s** - your report was triaged:\n\n**AI Analysis:**\n> %s\n**Severity:** %s\n**Tags:** %s"
-                        .formatted(reporterUsername, aiResult.summary(), aiResult.severity(), aiResult.tagsJson());
-
-                sendDiscordFollowUp(applicationId, token, finalMessage);
-
-                mirrorService.mirrorCommandExecution(
-                        name(),
-                        reporterUsername,
-                        "**AI Summary:** " + aiResult.summary() + "\n**Report Details:** " + details,
-                        aiResult.severity()
-                );
-
-            } catch (Exception e) {
-                e.printStackTrace();
-                try {
-                    sendDiscordFollowUp(applicationId, token, "Report received, but AI analysis failed: " + e.getMessage());
-                    mirrorService.mirrorCommandExecution(
-                            name(),
-                            reporterUsername,
-                            "Failed report processing: " + e.getMessage(),
-                            "CRITICAL"
-                    );
-                } catch (Exception fallbackException) {
-                    fallbackException.printStackTrace();
-                }
-            }
-        });
-
+    private Map<String, Object> openReportModal() {
         return Map.of(
-                "type", 5,
-                "data", Map.of("flags", 64)
+                "type", 9, // MODAL
+                "data", Map.of(
+                        "title", "Submit a Moderation Report",
+                        "custom_id", "report_modal",
+                        "components", List.of(
+                                Map.of(
+                                        "type", 1, // ACTION_ROW
+                                        "components", List.of(
+                                                Map.of(
+                                                        "type", 4, // TEXT_INPUT
+                                                        "custom_id", "report_details",
+                                                        "label", "What happened?",
+                                                        "style", 2, // PARAGRAPH
+                                                        "placeholder", "Please provide context or specific quotes...",
+                                                        "required", true,
+                                                        "min_length", 10,
+                                                        "max_length", 1500
+                                                )
+                                        )
+                                )
+                        )
+                )
         );
     }
 
-    private Optional<String> stringOption(Map<String, Object> interaction, String optionName) {
-        if (!(interaction.get("data") instanceof Map<?, ?> data)) {
-            return Optional.empty();
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> processModalSubmission(Map<String, Object> interaction) {
+        String discordInteractionId = (String) interaction.get("id");
+        String reporterUsername = extractUsername(interaction);
+        String token = (String) interaction.get("token");
+        String applicationId = (String) interaction.get("application_id");
+
+        // Extract value typed into "report_details"
+        Map<String, Object> data = (Map<String, Object>) interaction.get("data");
+        List<Map<String, Object>> components = (List<Map<String, Object>>) data.get("components");
+        String details = "(no details provided)";
+
+        try {
+            // Traverse structure: ActionRow -> TextInput
+            Map<String, Object> actionRow = components.get(0);
+            List<Map<String, Object>> innerComponents = (List<Map<String, Object>>) actionRow.get("components");
+            Map<String, Object> textInput = innerComponents.get(0);
+            details = (String) textInput.get("value");
+        } catch (Exception e) {
+            log.error("Failed to extract report_details value from modal submission.", e);
         }
-        if (!(data.get("options") instanceof List<?> options)) {
-            return Optional.empty();
-        }
-        for (Object option : options) {
-            if (option instanceof Map<?, ?> optionMap
-                    && optionName.equals(optionMap.get("name"))
-                    && optionMap.get("value") != null) {
-                return Optional.of(String.valueOf(optionMap.get("value")));
-            }
-        }
-        return Optional.empty();
+        processingService.processReportAsync(discordInteractionId, details, reporterUsername, applicationId, token);
+        return Map.of("type", 5);
     }
 
-    private Optional<String> invokingUsername(Map<String, Object> interaction) {
+    private String extractUsername(Map<String, Object> interaction) {
         Object user = interaction.get("member") instanceof Map<?, ?> member
                 ? member.get("user")
                 : interaction.get("user");
 
         if (user instanceof Map<?, ?> userMap && userMap.get("username") != null) {
-            return Optional.of(String.valueOf(userMap.get("username")));
+            return String.valueOf(userMap.get("username"));
         }
-        return Optional.empty();
-    }
-
-    private Optional<String> invokingUserId(Map<String, Object> interaction){
-        Object user = interaction.get("member") instanceof Map<?, ?> member
-                ? member.get("user")
-                : interaction.get("user");
-
-        if(user instanceof Map<?, ?> userMap && userMap.get("id") != null){
-            return Optional.of(String.valueOf(userMap.get("id")));
-        }
-
-        return Optional.empty();
-    }
-
-    private AiTriageResult callGeminiAi(String userDetails) throws Exception {
-        String promptText = """
-            You are a moderation bot. Analyze this report: "%s"
-            Return ONLY a JSON object (no markdown, no backticks) with these exact keys:
-            "summary" (string, 1 sentence max)
-            "tags" (array of strings, 2-3 single-word tags)
-            "severity" (string, choose one: "1 - Minor", "2 - Low", "3 - Moderate", "4 - High", "5 - Critical")
-            """.formatted(userDetails);
-
-        String rawAiResponse = chatClient.prompt(promptText).call().content();
-
-        String cleanJson = rawAiResponse.replaceAll("(?s)^```json\\s*|\\s*```$", "").trim();
-
-        JsonNode aiNode = jsonMapper.readTree(cleanJson);
-        String summary = aiNode.path("summary").asText();
-        String tagsJson = aiNode.path("tags").toString();
-        String severity = aiNode.path("severity").asText();
-
-        return new AiTriageResult(summary, tagsJson, severity);
-    }
-
-    private void sendDiscordFollowUp(String applicationId, String token, String content) throws Exception {
-        String url = "https://discord.com/api/v10/webhooks/" + applicationId + "/" + token + "/messages/@original";
-        Map<String, String> requestBody = Map.of("content", content);
-        String jsonBody = jsonMapper.writeValueAsString(requestBody);
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Content-Type", "application/json")
-                .method("PATCH", HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
-
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-        if (response.statusCode() >= 400) {
-            throw new RuntimeException("Discord Follow-up failed: " + response.body());
-        }
+        return "Unknown User";
     }
 }

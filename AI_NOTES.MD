@@ -419,3 +419,48 @@ Verified with a clean compile (`JAVA_HOME` pinned to the brew JDK 21,
 re-run the app against real Gemini/webhook credentials, so the *shape* of
 the fix is verified by reading the code, not an end-to-end test.
 
+---
+
+## 2026-09-27 — User's "Rule 0"; design discussion for `/rps` (no code written)
+
+**User stated a standing rule:** "Rule 0: Strictly follow do not touch the
+code at all" — when we're designing/brainstorming a feature together (as
+opposed to fixing/diagnosing something), no `Edit`/`Write` on any file until
+they explicitly say to implement it. Conceptual discussion only during that
+phase. Saved as a persistent feedback memory
+(`feedback_no-code-edits-during-design`) so this carries into future
+sessions too, not just this one. Confirmed with the user that this doesn't
+cover `AI_NOTES.MD` logging specifically — documentation isn't "the code,"
+and they expect every conversation logged here regardless (per the
+standing "log everything" instruction from 2026-09-26).
+
+**Feature discussed: `/rps` (rock-paper-scissors) with Discord buttons,
+single-player vs. the bot.** No code written — design only. Key points from
+that discussion, for whoever picks this up:
+
+- A button click is a **second, separate interaction** Discord sends back
+  to the same `/api/interaction` endpoint, with `type: 3`
+  (MESSAGE_COMPONENT) and `data.custom_id` set to whatever string the
+  original message's button declared. `InteractionController` currently has
+  no case for `type == 3` — it falls into the `default` branch
+  ("This interaction type isn't supported yet."). That's the actual gap to
+  fill.
+- Proposed shape: `/rps` (a normal `SlashCommand`) replies immediately
+  (`type: 4`) with a message containing one action row of 3 buttons (Rock/
+  Paper/Scissors), each `custom_id` encoding the inviter's user ID (e.g.
+  `rps:<user_id>:rock`) so the click can be validated against who's allowed
+  to play. A new, parallel abstraction (something like a `ButtonHandler`
+  interface + a dispatcher matching `custom_id` by *prefix* rather than
+  `SlashCommandDispatcher`'s exact-name match) would handle the click:
+  validate the clicking user against the embedded ID, roll the bot's random
+  choice, compute win/lose/tie, and reply with `type: 7` (UPDATE_MESSAGE) —
+  editing the original message in place with the result and clearing
+  `components` so the buttons can't be clicked twice.
+- Open questions left for the user to decide before this gets built:
+  whether to enforce the inviter-only restriction or let anyone click,
+  whether button clicks should persist through `InteractionService.save()`
+  like every other command currently does, and confirmed scope is
+  bot-vs-user only (not challenging another player).
+
+Nothing implemented — purely a design conversation, per Rule 0.
+
