@@ -1,0 +1,19 @@
+# Active only when SPRING_PROFILES_ACTIVE=prod (set this on Render).
+#
+# The frontend (Vercel) and backend (Render) are genuinely different sites
+# in production - unlike local dev, where localhost:3000/localhost:8080
+# count as the same site for cookie purposes (SameSite ignores port). A
+# session cookie with the default SameSite=Lax is never sent on a cross-site
+# fetch(), only on top-level navigations - so without this, the OAuth login
+# succeeds and creates a real session, but the browser won't attach that
+# cookie to the frontend's `/api/me` fetch call, and it looks logged out.
+#
+# Secure is required alongside SameSite=None (browsers reject None without
+# it) - kept out of the default profile because a Secure cookie is never
+# sent over plain http://localhost.
+server:
+  servlet:
+    session:
+      cookie:
+        same-site: none
+        secure: true
