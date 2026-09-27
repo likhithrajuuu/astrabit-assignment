@@ -4,6 +4,9 @@ import Link from "next/link";
 import { usePathname, useParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, type Me } from "@/lib/api";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { CommandIcon, RuleIcon, LogIcon } from "@/components/icons";
+import { Spinner } from "@/components/Spinner";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -20,66 +23,79 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   if (me === null) {
     return (
-      <div className="min-h-screen bg-neutral-950 p-8 text-sm text-neutral-400">
-        Loading…
+      <div className="flex min-h-screen items-center justify-center text-neutral-100">
+        <Spinner label="Loading…" />
       </div>
     );
   }
 
   if (!me.authenticated) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-neutral-100">
-        <div className="w-96 rounded-lg bg-neutral-900 p-8 text-center">
-          <h1 className="mb-4 text-lg font-semibold">Sign in required</h1>
-          <p className="mb-4 text-sm text-neutral-400">
+      <div className="flex min-h-screen items-center justify-center px-4 text-neutral-100">
+        <div className="card-panel w-full max-w-sm text-center">
+          <h1 className="mb-2 text-lg font-semibold text-white">
+            Sign in required
+          </h1>
+          <p className="mb-6 text-sm text-neutral-400">
             You need to sign in with Google to view this dashboard.
           </p>
-          <a
-            href={api.googleLoginUrl}
-            className="inline-block rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
-          >
-            Sign in with Google
-          </a>
+          <GoogleSignInButton />
         </div>
       </div>
     );
   }
 
   const tabs = [
-    { href: `/dashboard/${guildId}/commands`, label: "Commands" },
-    { href: `/dashboard/${guildId}/rules`, label: "Rules" },
-    { href: `/dashboard/${guildId}/log`, label: "Log" },
+    { href: `/dashboard/${guildId}/commands`, label: "Commands", icon: CommandIcon },
+    { href: `/dashboard/${guildId}/rules`, label: "Rules", icon: RuleIcon },
+    { href: `/dashboard/${guildId}/log`, label: "Log", icon: LogIcon },
   ];
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="mx-auto max-w-4xl p-8">
-        <div className="mb-2 text-xs text-neutral-400">
-          Signed in as {me.email} &middot;{" "}
-          <a href={api.logoutUrl} className="underline">
-            Sign out
-          </a>
-        </div>
-        <h1 className="mb-4 text-xl font-bold">
-          Astrabot Dashboard &middot; {guildId}
-        </h1>
-        <nav className="mb-6 flex gap-4 text-sm">
-          {tabs.map((tab) => (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              className={
-                pathname === tab.href
-                  ? "font-semibold text-white"
-                  : "text-neutral-400 hover:text-white"
-              }
-            >
-              {tab.label}
+    <div className="min-h-screen text-neutral-100">
+      <header className="border-b border-neutral-800/80 bg-neutral-950/60 backdrop-blur">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+          <div>
+            <p className="text-xs font-medium text-neutral-500">
+              Astrabot Dashboard
+            </p>
+            <h1 className="font-mono text-sm font-semibold text-white">
+              {guildId}
+            </h1>
+          </div>
+          <div className="flex items-center gap-4">
+            <Link href="/" className="text-xs font-medium text-neutral-400 hover:text-neutral-200">
+              Switch server
             </Link>
-          ))}
-        </nav>
-        {children}
-      </div>
+            <span className="text-neutral-700">|</span>
+            <span className="text-xs text-neutral-400">{me.email}</span>
+            <a
+              href={api.logoutUrl}
+              className="text-xs font-medium text-neutral-500 hover:text-neutral-300"
+            >
+              Sign out
+            </a>
+          </div>
+        </div>
+        <div className="mx-auto flex max-w-5xl gap-1 px-6 pb-3">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const active = pathname === tab.href;
+            return (
+              <Link
+                key={tab.href}
+                href={tab.href}
+                className={active ? "nav-tab-active" : "nav-tab"}
+              >
+                <Icon />
+                {tab.label}
+              </Link>
+            );
+          })}
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-5xl px-6 py-8">{children}</main>
     </div>
   );
 }

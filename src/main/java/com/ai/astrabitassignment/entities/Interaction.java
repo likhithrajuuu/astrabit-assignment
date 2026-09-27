@@ -40,7 +40,7 @@ public class Interaction {
     private String payload;
 
     @Column
-    private Integer severity;
+    private String severity;
 
     @Column(name = "ai_summary")
     private String aiSummary;

@@ -3,7 +3,10 @@ package com.ai.astrabitassignment.dashboard;
 import com.ai.astrabitassignment.entities.CommandConfig;
 import com.ai.astrabitassignment.entities.Interaction;
 import com.ai.astrabitassignment.entities.Rule;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -11,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -36,6 +40,23 @@ public class DashboardController {
 
     public DashboardController(DashboardService dashboardService) {
         this.dashboardService = dashboardService;
+    }
+
+    /**
+     * Called by the frontend right after Discord redirects back from the
+     * "Add to Server" flow with a {@code guild_id}. Auto-provisions the
+     * guild so its dashboard works immediately instead of showing
+     * "server hasn't connected yet" until someone runs a command.
+     */
+    @PostMapping("/connect")
+    public Map<String, String> connect(
+            @RequestBody Map<String, String> body,
+            @AuthenticationPrincipal OAuth2User principal
+    ) {
+        String guildId = body.get("guildId");
+        String adminEmail = principal.getAttribute("email");
+        String guildName = dashboardService.connectGuild(guildId, adminEmail);
+        return Map.of("guildId", guildId, "guildName", guildName);
     }
 
     @GetMapping("/meta")
@@ -90,10 +111,14 @@ public class DashboardController {
     }
 
     @GetMapping("/{guildId}/interactions")
-    public ResponseEntity<List<Interaction>> interactions(@PathVariable String guildId) {
+    public ResponseEntity<Page<Interaction>> interactions(
+            @PathVariable String guildId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
         if (!dashboardService.guildExists(guildId)) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(dashboardService.listInteractions(guildId));
+        return ResponseEntity.ok(dashboardService.listInteractions(guildId, page, size));
     }
 }

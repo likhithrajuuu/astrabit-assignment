@@ -1,4 +1,23 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+const DISCORD_APP_ID = process.env.NEXT_PUBLIC_DISCORD_APP_ID ?? "";
+
+// View Channel, Send Messages, Embed Links, Attach Files, Read Message
+// History, Use Application Commands — enough for the bot to actually work,
+// nothing admin-level.
+const BOT_PERMISSIONS = "2147601408";
+
+/** Builds the "Add to Server" Discord OAuth URL. Client-side only (needs window.location). */
+export function discordInviteUrl(): string {
+  const redirectUri = `${window.location.origin}/connect/callback`;
+  const params = new URLSearchParams({
+    client_id: DISCORD_APP_ID,
+    permissions: BOT_PERMISSIONS,
+    scope: "bot applications.commands",
+    response_type: "code",
+    redirect_uri: redirectUri,
+  });
+  return `https://discord.com/oauth2/authorize?${params.toString()}`;
+}
 
 export type CommandConfig = {
   guildId: string;
@@ -34,6 +53,16 @@ export type Interaction = {
   aiTags: string | null;
   status: string;
   receivedAt: string;
+};
+
+export type Page<T> = {
+  content: T[];
+  number: number;
+  size: number;
+  totalPages: number;
+  totalElements: number;
+  first: boolean;
+  last: boolean;
 };
 
 export type Meta = {
@@ -115,6 +144,14 @@ export const api = {
       method: "DELETE",
     }),
 
-  interactions: (guildId: string) =>
-    apiFetch<Interaction[]>(`/api/dashboard/${guildId}/interactions`),
+  interactions: (guildId: string, page: number = 0, size: number = 20) =>
+    apiFetch<Page<Interaction>>(
+      `/api/dashboard/${guildId}/interactions?page=${page}&size=${size}`
+    ),
+
+  connectGuild: (guildId: string) =>
+    apiFetch<{ guildId: string; guildName: string }>("/api/dashboard/connect", {
+      method: "POST",
+      body: JSON.stringify({ guildId }),
+    }),
 };

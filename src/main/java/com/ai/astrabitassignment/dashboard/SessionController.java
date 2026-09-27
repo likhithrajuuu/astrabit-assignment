@@ -20,10 +20,20 @@ public class SessionController {
         if (principal == null) {
             return Map.of("authenticated", false);
         }
+
+        // Target-typed locals, not String.valueOf(principal.getAttribute(...))
+        // directly: getAttribute is <A> A getAttribute(String), and feeding
+        // its result straight into the overloaded String.valueOf lets javac
+        // resolve the more-specific String.valueOf(char[]) instead of
+        // String.valueOf(Object) - the erased generic cast then tries to
+        // cast the real String to char[] at runtime and throws.
+        String email = principal.getAttribute("email");
+        String name = principal.getAttribute("name");
+
         return Map.of(
                 "authenticated", true,
-                "email", String.valueOf(principal.getAttribute("email")),
-                "name", String.valueOf(principal.getAttribute("name"))
+                "email", email != null ? email : "",
+                "name", name != null ? name : ""
         );
     }
 }

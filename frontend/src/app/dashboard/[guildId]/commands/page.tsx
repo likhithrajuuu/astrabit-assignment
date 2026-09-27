@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, ApiError, type CommandConfig } from "@/lib/api";
+import { Toggle } from "@/components/Toggle";
+import { Spinner } from "@/components/Spinner";
+import { GuildNotFound } from "@/components/GuildNotFound";
 
 export default function CommandsPage() {
   const params = useParams<{ guildId: string }>();
@@ -10,6 +13,7 @@ export default function CommandsPage() {
   const [configs, setConfigs] = useState<CommandConfig[] | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     api
@@ -21,6 +25,7 @@ export default function CommandsPage() {
   }, [guildId]);
 
   function update(index: number, patch: Partial<CommandConfig>) {
+    setSaved(false);
     setConfigs((prev) =>
       prev ? prev.map((c, i) => (i === index ? { ...c, ...patch } : c)) : prev
     );
@@ -31,91 +36,89 @@ export default function CommandsPage() {
     setSaving(true);
     try {
       await api.saveCommands(guildId, configs);
+      setSaved(true);
     } finally {
       setSaving(false);
     }
   }
 
-  if (notFound) {
-    return (
-      <p className="text-sm text-neutral-400">
-        This server hasn&apos;t connected yet — run any command (e.g. /ping)
-        in that Discord server first, then reload this page.
-      </p>
-    );
-  }
-
-  if (!configs) return <p className="text-sm text-neutral-400">Loading…</p>;
+  if (notFound) return <GuildNotFound guildId={guildId} />;
+  if (!configs) return <Spinner label="Loading commands…" />;
 
   return (
     <div>
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr className="border-b border-neutral-700 text-left text-xs uppercase text-neutral-400">
-            <th className="py-2 pr-2">Command</th>
-            <th className="py-2 pr-2">Enabled</th>
-            <th className="py-2 pr-2">Mirror</th>
-            <th className="py-2 pr-2">AI</th>
-            <th className="py-2 pr-2">Ephemeral</th>
-            <th className="py-2">Reply template</th>
-          </tr>
-        </thead>
-        <tbody>
-          {configs.map((c, i) => (
-            <tr key={c.commandName} className="border-b border-neutral-800">
-              <td className="py-2 pr-2 font-mono">/{c.commandName}</td>
-              <td className="py-2 pr-2">
-                <input
-                  type="checkbox"
-                  checked={c.enabled}
-                  onChange={(e) => update(i, { enabled: e.target.checked })}
-                />
-              </td>
-              <td className="py-2 pr-2">
-                <input
-                  type="checkbox"
-                  checked={c.mirrorEnabled}
-                  onChange={(e) =>
-                    update(i, { mirrorEnabled: e.target.checked })
-                  }
-                />
-              </td>
-              <td className="py-2 pr-2">
-                <input
-                  type="checkbox"
-                  checked={c.aiEnabled}
-                  onChange={(e) => update(i, { aiEnabled: e.target.checked })}
-                />
-              </td>
-              <td className="py-2 pr-2">
-                <input
-                  type="checkbox"
-                  checked={c.ephemeral}
-                  onChange={(e) => update(i, { ephemeral: e.target.checked })}
-                />
-              </td>
-              <td className="py-2">
-                <input
-                  type="text"
-                  value={c.replyTemplate ?? ""}
-                  onChange={(e) =>
-                    update(i, { replyTemplate: e.target.value })
-                  }
-                  placeholder="(default)"
-                  className="w-full rounded border border-neutral-700 bg-neutral-800 px-2 py-1"
-                />
-              </td>
+      <div className="mb-5 flex items-end justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Commands</h2>
+          <p className="text-sm text-neutral-400">
+            Turn commands on or off, and customize how they respond.
+          </p>
+        </div>
+        <button onClick={save} disabled={saving} className="btn-primary">
+          {saving ? "Saving…" : saved ? "Saved ✓" : "Save all changes"}
+        </button>
+      </div>
+
+      <div className="card-panel overflow-x-auto !p-0">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="pl-5">Command</th>
+              <th>Enabled</th>
+              <th>Mirror</th>
+              <th>AI</th>
+              <th>Ephemeral</th>
+              <th className="pr-5">Reply template</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <button
-        onClick={save}
-        disabled={saving}
-        className="mt-4 rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-      >
-        {saving ? "Saving…" : "Save all changes"}
-      </button>
+          </thead>
+          <tbody>
+            {configs.map((c, i) => (
+              <tr key={c.commandName}>
+                <td className="pl-5 font-mono text-neutral-200">
+                  /{c.commandName}
+                </td>
+                <td>
+                  <Toggle
+                    checked={c.enabled}
+                    onChange={(v) => update(i, { enabled: v })}
+                    label={`Enable /${c.commandName}`}
+                  />
+                </td>
+                <td>
+                  <Toggle
+                    checked={c.mirrorEnabled}
+                    onChange={(v) => update(i, { mirrorEnabled: v })}
+                    label={`Mirror /${c.commandName}`}
+                  />
+                </td>
+                <td>
+                  <Toggle
+                    checked={c.aiEnabled}
+                    onChange={(v) => update(i, { aiEnabled: v })}
+                    label={`AI for /${c.commandName}`}
+                  />
+                </td>
+                <td>
+                  <Toggle
+                    checked={c.ephemeral}
+                    onChange={(v) => update(i, { ephemeral: v })}
+                    label={`Ephemeral /${c.commandName}`}
+                  />
+                </td>
+                <td className="pr-5">
+                  <input
+                    type="text"
+                    value={c.replyTemplate ?? ""}
+                    onChange={(e) => update(i, { replyTemplate: e.target.value })}
+                    placeholder="(default)"
+                    className="input-field !py-1.5"
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
