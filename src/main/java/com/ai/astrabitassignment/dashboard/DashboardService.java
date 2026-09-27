@@ -1,7 +1,9 @@
 package com.ai.astrabitassignment.dashboard;
 
 import com.ai.astrabitassignment.entities.CommandConfig;
+import com.ai.astrabitassignment.entities.Interaction;
 import com.ai.astrabitassignment.entities.Rule;
+import com.ai.astrabitassignment.interactions.InteractionRepository;
 import com.ai.astrabitassignment.interactions.commands.SlashCommand;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -13,17 +15,20 @@ public class DashboardService {
 
     private final CommandConfigRepository commandConfigRepository;
     private final RuleRepository ruleRepository;
+    private final InteractionRepository interactionRepository;
     private final JdbcTemplate jdbcTemplate;
     private final List<SlashCommand> registeredCommands;
 
     public DashboardService(
             CommandConfigRepository commandConfigRepository,
             RuleRepository ruleRepository,
+            InteractionRepository interactionRepository,
             JdbcTemplate jdbcTemplate,
             List<SlashCommand> registeredCommands
     ) {
         this.commandConfigRepository = commandConfigRepository;
         this.ruleRepository = ruleRepository;
+        this.interactionRepository = interactionRepository;
         this.jdbcTemplate = jdbcTemplate;
         this.registeredCommands = registeredCommands;
     }
@@ -76,11 +81,15 @@ public class DashboardService {
         return ruleRepository.findByGuildIdOrderByPriorityAsc(guildId);
     }
 
-    public void saveRule(Rule rule) {
-        ruleRepository.save(rule);
+    public Rule saveRule(Rule rule) {
+        return ruleRepository.save(rule);
     }
 
     public void deleteRule(Long ruleId) {
         ruleRepository.deleteById(ruleId);
+    }
+
+    public List<Interaction> listInteractions(String guildId) {
+        return interactionRepository.findByGuildIdOrderByReceivedAtDesc(guildId);
     }
 }

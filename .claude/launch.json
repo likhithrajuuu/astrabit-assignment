@@ -9,6 +9,15 @@
         "set -a && source .env && set +a && JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./mvnw spring-boot:run"
       ],
       "port": 8080
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "export PATH=/opt/homebrew/opt/node/bin:$PATH && cd frontend && npm run dev"
+      ],
+      "port": 3000
     }
   ]
 }

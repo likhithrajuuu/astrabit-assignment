@@ -15,6 +15,14 @@ spring:
       genai:
         api-key: ${GEMINI_API_KEY}
         project-id: ${GEMINI_PROJECT_NUMBER}
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope: openid,email,profile
 management:
   endpoint:
     health:
@@ -24,3 +32,5 @@ discord:
   public-key: ${DISCORD_PUBLIC_KEY}
   bot-token: ${DISCORD_BOT_TOKEN}
   mirror-webhook-url: ${DISCORD_WEBHOOK_URL}
+app:
+  frontend-url: ${FRONTEND_URL:http://localhost:3000}
