@@ -1,4 +1,4 @@
-package com.ai.astrabitassignment.services;
+package com.ai.astrabitassignment.mirror;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;

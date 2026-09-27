@@ -60,6 +60,7 @@ Fill in `.env`:
 | `DISCORD_APP_ID` | Discord Developer Portal → your app → **General Information** → Application ID |
 | `DISCORD_PUBLIC_KEY` | Same page → **Public Key** |
 | `DISCORD_BOT_TOKEN` | **Bot** tab → Reset/copy **Token** |
+| `DISCORD_WEBHOOK_URL` | A channel webhook URL (Server Settings → Integrations → Webhooks) that `/report` mirrors triaged reports to |
 | `GEMINI_API_KEY` | Free-tier key from [Google AI Studio](https://aistudio.google.com/apikey) |
 | `GEMINI_PROJECT_NUMBER` | The Google Cloud project number associated with that key |
 
@@ -143,16 +144,18 @@ Registered commands:
   a moment later (needs `GEMINI_API_KEY`/`GEMINI_PROJECT_NUMBER` set).
 - **`/roast <target>`** — same deferred pattern as `/ask`, but prompts
   Gemini for a playful roast of whatever you pass in.
-- **`/report <details>`** — meant to persist the report and run it through
-  Gemini for a triage summary, same deferred pattern. **Currently broken**
-  as of 2026-09-26 — the AI call will always fail and fall back to an error
-  message. See the "2026-09-26 — Diagnosed" entries in
-  [AI_NOTES.MD](AI_NOTES.MD) for the specific bugs (a Jackson 2/3 mismatch,
-  a wrong `@Value` import, and a wrong property key) — none fixed yet.
+- **`/report <details>`** — persists the report, runs it through Gemini for
+  a severity/summary/tags triage, replies to the reporter ephemerally, and
+  mirrors the result (or a failure notice) to `DISCORD_WEBHOOK_URL`. (This
+  command went through a few rounds of bugs during development — see
+  `AI_NOTES.MD` if curious about the history — but is working as of
+  2026-09-27.)
 
-Every command handler also updates that interaction's row in the
-`interaction` table (inserted by `InteractionService` before dispatch) to
-`status = 'PROCESSED'` once it's done.
+Full request/response detail for every route and command — required
+options, exact response payloads, DB side effects — is in
+[ENDPOINTS.md](ENDPOINTS.md). Every command except `/ping` updates that
+interaction's row in the `interaction` table (inserted by
+`InteractionService` before dispatch) to `status = 'PROCESSED'` once done.
 
 Note: global commands can take up to ~1 hour to show up for the first time;
 edits to an existing command propagate faster.

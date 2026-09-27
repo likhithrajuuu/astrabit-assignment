@@ -351,3 +351,71 @@ Verified the whole module still compiles clean with JDK 21
   pointing back at the diagnosis entries above, so the README doesn't claim
   something works that doesn't.
 
+---
+
+## 2026-09-27 — `ENDPOINTS.md` added; `/report`'s bugs are now all fixed
+
+**User rewrote `ReportCommand` since the last entry — all three previously
+diagnosed bugs are gone:**
+- `@Value` now correctly imports `org.springframework.beans.factory.annotation.Value`
+  (was `com.google.api.client.util.Value`).
+- Property key is now `${spring.ai.google.genai.api-key}`, matching where
+  the value actually lives in `application.yaml` (was the nonexistent flat
+  `gemini.api.key`).
+- Jackson imports are now `tools.jackson.databind.{JsonNode,json.JsonMapper}`
+  (Jackson 3) instead of the `com.fasterxml.jackson.*` ones.
+- The Gemini call itself changed too — now goes through the injected
+  `ChatClient` (Spring AI) instead of a raw HTTP POST to the
+  `generativelanguage.googleapis.com` REST endpoint, consistent with how
+  `/ask` and `/roast` do it.
+- `AiTriageResult` (the record added yesterday, previously unused) is now
+  actually populated: the prompt asks Gemini for strict JSON
+  (`summary`/`tags`/`severity`), strips any ` ```json ` fencing, and parses
+  it.
+- Status flow is now `RECEIVED` → `PROCESSING` → `PROCESSED`, with the
+  `RECEIVED`→`PROCESSING` update guarded by `AND status = 'RECEIVED'` so a
+  duplicate delivery of the same interaction becomes a no-op instead of
+  double-processing.
+
+**New: `NotificationMirrorService`** (`src/main/java/.../mirror/`) — posts a
+Discord embed (title, description, severity-coded color, user/severity
+fields) to a plain channel webhook URL, fire-and-forget. This is the
+"Mirror" row from the original tech-stack table, now implemented — but only
+wired into `/report` so far, not the other commands. Needs a new env var,
+`DISCORD_WEBHOOK_URL` (backing `discord.mirror-webhook-url` in
+`application.yaml`) — this wasn't in `.env.example`/README before; added
+both now.
+
+**Minor inconsistency spotted, not a bug:** `NotificationMirrorService.java`
+physically lives under `.../mirror/` but declares `package
+com.ai.astrabitassignment.services;` — directory and package don't match.
+Confirmed this does **not** break the Maven/javac build (recompiled clean,
+24 files) — `javac` doesn't require source-file location to match its
+package declaration, that's an IDE/convention thing, not a compiler
+requirement. Flagged in `ENDPOINTS.md` as worth tidying up eventually, nothing more.
+
+**Created `ENDPOINTS.md`** (what was actually asked for this turn): full
+reference for both real HTTP routes (`POST /api/interaction`,
+`GET /actuator/health`) and, since Discord multiplexes everything through
+the one interactions endpoint, a second layer documenting each interaction
+`type` and each of the six slash commands as its own "virtual route" —
+required options (with Discord option types), exact response payload shape
+(immediate vs deferred+follow-up, ephemeral vs not), required env vars per
+command, and the DB `status` transitions each one causes. Also documents the
+auto-provisioning + `interaction` row insert that happens for every
+`APPLICATION_COMMAND` before dispatch, and the two failure-path responses
+(`401` from a bad signature, "Unknown command." for an unrecognized command
+name).
+
+**Docs kept in sync:** updated the `/report` bullet in `README.md`'s "Try it
+in Discord" section (removed the now-stale "currently broken" note, pointed
+at `ENDPOINTS.md` for full detail instead of duplicating it), fixed a
+slightly-wrong blanket statement there ("every command updates status to
+PROCESSED" — actually every command *except* `/ping`), and added
+`DISCORD_WEBHOOK_URL` to both `.env.example` and the README's env var table.
+
+Verified with a clean compile (`JAVA_HOME` pinned to the brew JDK 21,
+`BUILD SUCCESS`, 24 source files) before writing any of this down — didn't
+re-run the app against real Gemini/webhook credentials, so the *shape* of
+the fix is verified by reading the code, not an end-to-end test.
+
