@@ -20,6 +20,9 @@ public class Interaction {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "discord_interaction_id", nullable = false, unique = true, length = 32)
+    private String discordInteractionId;
+
     @Column(name = "guild_id", nullable = false, length = 32)
     private String guildId;
 

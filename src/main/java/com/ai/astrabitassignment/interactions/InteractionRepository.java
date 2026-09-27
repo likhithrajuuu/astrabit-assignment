@@ -9,4 +9,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface InteractionRepository extends JpaRepository<Interaction, Long> {
     Page<Interaction> findByGuildId(String guildId, Pageable pageable);
+
+    boolean existsByDiscordInteractionId(String discordInteractionId);
 }

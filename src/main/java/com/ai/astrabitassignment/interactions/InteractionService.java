@@ -4,15 +4,21 @@ import com.ai.astrabitassignment.entities.Interaction;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 public class InteractionService {
+
+    private static final Logger log = LoggerFactory.getLogger(InteractionService.class);
 
     private final InteractionRepository repository;
     private final ObjectMapper objectMapper;
@@ -29,7 +35,14 @@ public class InteractionService {
     }
 
     @Transactional
-    public Interaction save(Map<String, Object> interaction) {
+    public Optional<Interaction> saveIfNew(Map<String, Object> interaction) {
+        String discordInteractionId = String.valueOf(interaction.get("id"));
+
+        if (repository.existsByDiscordInteractionId(discordInteractionId)) {
+            log.info("Duplicate delivery of interaction {} - skipping.", discordInteractionId);
+            return Optional.empty();
+        }
+
         String guildId = extractGuildId(interaction);
         String discordUserId = extractUserId(interaction);
         String discordUserName = extractUserName(interaction);
@@ -58,16 +71,22 @@ public class InteractionService {
 
         Interaction entity = new Interaction();
 
+        entity.setDiscordInteractionId(discordInteractionId);
         entity.setGuildId(guildId);
         entity.setType(extractType(interaction));
         entity.setCommandName(extractCommandName(interaction));
-        entity.setUserId(extractUserId(interaction));
-        entity.setUserName(extractUserName(interaction));
+        entity.setUserId(discordUserId);
+        entity.setUserName(discordUserName);
         entity.setPayload(toJson(interaction));
         entity.setStatus("RECEIVED");
         entity.setReceivedAt(Instant.now());
 
-        return repository.save(entity);
+        try {
+            return Optional.of(repository.save(entity));
+        } catch (DataIntegrityViolationException e) {
+            log.info("Lost a race with a concurrent redelivery of interaction {} - skipping.", discordInteractionId);
+            return Optional.empty();
+        }
     }
 
     private String extractGuildId(Map<String, Object> interaction) {

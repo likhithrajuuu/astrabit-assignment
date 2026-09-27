@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api/interaction")
@@ -49,37 +48,23 @@ public class InteractionController {
                     InteractionResponses.pong();
 
             case APPLICATION_COMMAND -> {
-                CompletableFuture.runAsync(() -> {
-                    try {
-                        interactionService.save(interaction);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                });
-
+                if (isDuplicate(interaction)) {
+                    yield InteractionResponses.ephemeralMessage("This action was already processed.");
+                }
                 yield dispatcher.dispatch(interaction);
             }
 
             case MESSAGE_COMPONENT -> {
-                CompletableFuture.runAsync(() -> {
-                    try {
-                        interactionService.save(interaction);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                });
-
+                if (isDuplicate(interaction)) {
+                    yield InteractionResponses.ephemeralMessage("This action was already processed.");
+                }
                 yield handleMessageComponent(interaction);
             }
 
             case MODAL_SUBMIT -> {
-                CompletableFuture.runAsync(() -> {
-                    try {
-                        interactionService.save(interaction);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                });
+                if (isDuplicate(interaction)) {
+                    yield InteractionResponses.ephemeralMessage("This action was already processed.");
+                }
 
                 Map<String, Object> data = (Map<String, Object>) interaction.get("data");
                 String customId = (String) data.get("custom_id");
@@ -96,6 +81,15 @@ public class InteractionController {
                             "This interaction type isn't supported yet."
                     );
         };
+    }
+
+    /**
+     *  Checking if the interaction for duplication
+     * @param interaction
+     * @return
+     */
+    private boolean isDuplicate(Map<String, Object> interaction) {
+        return interactionService.saveIfNew(interaction).isEmpty();
     }
 
     @SuppressWarnings("unchecked")

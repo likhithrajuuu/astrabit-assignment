@@ -524,3 +524,68 @@ exactly right — `ReportCommand.handle()` now branches on
 Confirmed via reading the code, not by running the app against live
 Discord/Gemini credentials.
 
+---
+
+## 2026-09-27 — Audited against the assignment brief;
+
+User pasted the full assignment brief and asked for an honest audit against
+it: core requirements, stretch goals, quality bar. Went through the actual
+code (not memory) and reported the real state — most notably:
+- **No deployment exists at all.** Everything is `localhost:8080`/`:3000`;
+  no Dockerfile/render.yaml/etc. This is an explicit core requirement, fully
+  unmet.
+- **The dashboard's config/rules are cosmetic.** Confirmed via `grep` that
+  nothing in `interactions/commands/` reads `CommandConfigRepository` or
+  `RuleRepository`. Toggling a command off or adding a rule in the
+  dashboard has zero effect on runtime behavior.
+- **No dedup on interaction id** (this session's task, see below).
+- **No retry/failure-state tracking.** The `job` table (with `attempts`/
+  `next_run_at`/`last_error` - clearly built for exactly this) is entirely
+  unused; a failed downstream call sends a fallback message but leaves the
+  `interaction` row stuck at `PROCESSING` forever, never `FAILED`.
+- Everything else (Ed25519 verification, ≥2 commands, mirror, dashboard
+  login, defer+follow-up for slow work, no secrets in logs/client) checked
+  out as genuinely done.
+
+---
+
+## 2026-09-27 — Q&A: what is deduplication, why it matters, how it's implemented
+
+Asked, after the dedup work above, for a conceptual explanation: what
+dedup is, why it matters, and how the flow works in this backend.
+
+- **What it is:** detecting that an incoming event has already been
+  handled, and refusing to process it again even though it looks like a
+  fresh request from the outside.
+- **Why it matters here:** Discord's interaction delivery is at-least-once,
+  not exactly-once — a slow ack (missed the ~3s window) or a network blip
+  makes Discord resend the *same* interaction id. Processing it again means
+  a second Gemini call (real cost), a second mirror post, a second attempt
+  to use an already-used interaction token, and a duplicate row making the
+  dashboard's log lie about what actually happened. The assignment's
+  quality bar calls this out explicitly.
+- **The general pattern:** pick a stable unique id for "the thing that must
+  not happen twice"; check-before-work; and make the "mark as seen" step
+  race-safe via a real database constraint, not just an in-app check, since
+  two near-simultaneous redeliveries could both pass an in-memory check
+  before either finishes.
+- **How it maps onto this codebase specifically:**
+  1. `uq_interaction_discord_id` (the actual enforcement) — Postgres itself
+     refuses a second row with the same `discord_interaction_id`, no matter
+     how many threads/instances are running.
+  2. `InteractionService.saveIfNew` checks `existsByDiscordInteractionId`
+     first (fast path, skips wasted provisioning work), then attempts the
+     insert, catching a unique-constraint violation as the race-safety net
+     if two redeliveries land close together.
+  3. `InteractionController` calls this *before* deciding whether to
+     dispatch to the command handler at all — a detected duplicate returns
+     a safe ephemeral ack and never touches the command's real logic.
+  4. Called out why this needed more than just adding a column: the
+     original code saved the interaction on a fire-and-forget background
+     thread while running the command logic in parallel on the main thread,
+     so nothing was actually sequenced to let a "have we seen this" check
+     gate whether the real work ran - fixing that ordering (synchronous
+     check, then decide) was as much the fix as the schema change itself.
+
+No code changes — conceptual explanation only.
+

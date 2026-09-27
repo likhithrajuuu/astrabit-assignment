@@ -18,8 +18,10 @@ side effects.
 | `POST` | `/api/interaction` | Ed25519 signature (see below) | Discord's interactions webhook — every PING and slash command lands here |
 | `GET` | `/actuator/health` | none | Liveness/readiness check (Spring Boot Actuator, `show-details: always`) |
 
-No other routes are registered — `AstrabitAssignmentApplication` has exactly
-one `@RestController` (`InteractionController`).
+(The dashboard API and Google OAuth routes added since this doc was first
+written live separately under `/api/dashboard/**`, `/api/me`, and Spring
+Security's own `/oauth2/**`/`/login/**`/`/logout` — this doc still only
+covers the Discord-facing surface.)
 
 ### `GET /actuator/health`
 
@@ -50,7 +52,7 @@ one `@RestController` (`InteractionController`).
   | `type` | Meaning | What happens |
   |---|---|---|
   | `1` | PING | Replies `{"type": 1}` immediately. No persistence, no signature-adjacent side effects beyond the filter itself. |
-  | `2` | APPLICATION_COMMAND | See "Every command, before dispatch" and the command table below. |
+  | `2`, `3`, `5` | APPLICATION_COMMAND / MESSAGE_COMPONENT / MODAL_SUBMIT | See "Every command, before dispatch" and the command table below. |
   | anything else | Not implemented | Replies ephemerally: `{"type": 4, "data": {"content": "This interaction type isn't supported yet.", "flags": 64}}` |
 
   If `type` is `2` but `data.name` doesn't match any registered command:
@@ -59,18 +61,37 @@ one `@RestController` (`InteractionController`).
 
 #### Every command, before dispatch
 
-`InteractionController` calls `InteractionService.save(interaction)` for
-**every** `APPLICATION_COMMAND` interaction, before routing to the command
-handler. This:
-1. Auto-provisions an `app_user` row keyed on the invoking Discord user ID
-   (upsert; placeholder `password_hash` — these users can't log into a
-   dashboard, there isn't one yet), then an `guild` row keyed on `guild_id`
-   owned by that user (upsert) — satisfies `interaction.guild_id`'s foreign
-   key, since there's no OAuth "connect your server" flow yet to create
-   these rows any other way.
-2. Inserts a row into `interaction` with `status = 'RECEIVED'`, the full raw
-   payload as JSON, and the extracted `guild_id`/`command_name`/`user_id`/
-   `user_name`.
+`InteractionController` calls `InteractionService.saveIfNew(interaction)`
+**synchronously**, before routing to the command handler, for every
+`APPLICATION_COMMAND`, `MESSAGE_COMPONENT`, and `MODAL_SUBMIT` interaction.
+This:
+1. Checks whether this exact Discord interaction id (`interaction.id`) has
+   already been recorded (`interaction.discord_interaction_id`, unique
+   constraint `uq_interaction_discord_id`, added in
+   `V4__dedup_interaction_by_discord_id.sql`). Discord redelivers an
+   interaction if it doesn't get a response in time or on a network blip,
+   reusing the same id — **if this id has already been seen, the command
+   handler is never called at all** (no second AI call, no second mirror
+   post, no second Discord follow-up attempt). The caller gets back
+   `{"type": 4, "data": {"content": "This action was already processed.", "flags": 64}}`
+   instead.
+2. Otherwise, auto-provisions an `app_user` row keyed on the invoking
+   Discord user ID (upsert; placeholder `password_hash` — these users can't
+   log into the dashboard via Discord identity, only via Google OAuth),
+   then a `guild` row keyed on `guild_id` owned by that user (upsert) —
+   satisfies `interaction.guild_id`'s foreign key when the guild wasn't
+   already connected through the dashboard's "Add to Server" flow.
+3. Inserts a row into `interaction` with `status = 'RECEIVED'`, the full raw
+   payload as JSON, `discord_interaction_id`, and the extracted
+   `guild_id`/`command_name`/`user_id`/`user_name`.
+
+The dedup check and the insert are two separate safety nets on purpose: an
+upfront `existsBy` avoids doing the app_user/guild upsert work for the
+common case, and the database's unique constraint is the real source of
+truth, catching the rare race where two redeliveries land close enough
+together that both pass the upfront check (`InteractionService` catches the
+resulting constraint violation and treats it the same as a normal
+duplicate, not an error).
 
 Each command handler (except `/ping`) later updates that same row's
 `status` as it processes (see per-command status column below).
