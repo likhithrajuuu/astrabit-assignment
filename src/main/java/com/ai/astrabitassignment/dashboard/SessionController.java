@@ -1,8 +1,12 @@
 package com.ai.astrabitassignment.dashboard;
 
+import com.ai.astrabitassignment.config.TokenStore;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -14,6 +18,14 @@ import java.util.Map;
  */
 @RestController
 public class SessionController {
+
+    private static final String BEARER_PREFIX = "Bearer ";
+
+    private final TokenStore tokenStore;
+
+    public SessionController(TokenStore tokenStore) {
+        this.tokenStore = tokenStore;
+    }
 
     @GetMapping("/api/me")
     public Map<String, Object> me(@AuthenticationPrincipal OAuth2User principal) {
@@ -35,5 +47,15 @@ public class SessionController {
                 "email", email != null ? email : "",
                 "name", name != null ? name : ""
         );
+    }
+
+    /** Revokes the caller's own bearer token; the frontend clears its stored copy separately. */
+    @PostMapping("/api/logout")
+    public ResponseEntity<Void> logout(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith(BEARER_PREFIX)) {
+            tokenStore.revoke(header.substring(BEARER_PREFIX.length()));
+        }
+        return ResponseEntity.noContent().build();
     }
 }

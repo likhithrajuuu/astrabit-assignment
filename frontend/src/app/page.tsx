@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { api, discordInviteUrl, type Me } from "@/lib/api";
+import { api, captureAuthToken, discordInviteUrl, type Me } from "@/lib/api";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { DiscordIcon } from "@/components/icons";
 import { Spinner } from "@/components/Spinner";
@@ -13,6 +13,7 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
+    captureAuthToken();
     api
       .me()
       .then(setMe)
@@ -22,6 +23,11 @@ export default function Home() {
   function goToGuild(e: FormEvent) {
     e.preventDefault();
     router.push(`/dashboard/${guildId}/commands`);
+  }
+
+  async function signOut() {
+    await api.logout();
+    setMe({ authenticated: false });
   }
 
   return (
@@ -62,12 +68,12 @@ export default function Home() {
                     {me.email}
                   </span>
                 </p>
-                <a
-                  href={api.logoutUrl}
+                <button
+                  onClick={signOut}
                   className="text-xs font-medium text-neutral-500 hover:text-neutral-300"
                 >
                   Sign out
-                </a>
+                </button>
               </div>
 
               <a

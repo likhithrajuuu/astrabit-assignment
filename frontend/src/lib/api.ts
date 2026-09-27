@@ -75,30 +75,63 @@ export type Me =
   | { authenticated: false }
   | { authenticated: true; email: string; name: string };
 
-/** Reads the XSRF-TOKEN cookie Spring Security's CookieCsrfTokenRepository sets. */
-function readCsrfToken(): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
+const TOKEN_KEY = "astrabot_token";
+
+/**
+ * The backend and frontend are different registrable domains in
+ * production (onrender.com vs vercel.app), and browsers block a
+ * cross-site cookie as third-party regardless of SameSite=None - so
+ * instead of a session cookie, the backend hands us an opaque token on
+ * the post-login redirect URL and we hold it ourselves and send it back
+ * explicitly as an Authorization header.
+ */
+export function captureAuthToken(): void {
+  if (typeof window === "undefined") return;
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get("token");
+  if (!token) return;
+
+  try {
+    sessionStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    // sessionStorage unavailable (private mode, etc.) - just won't persist
+  }
+  url.searchParams.delete("token");
+  window.history.replaceState({}, "", url.toString());
+}
+
+function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function clearAuthToken(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
 }
 
 async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const headers = new Headers(init.headers);
 
-  if (method !== "GET" && method !== "HEAD") {
-    const token = readCsrfToken();
-    if (token) headers.set("X-XSRF-TOKEN", token);
-    if (init.body && !headers.has("Content-Type")) {
-      headers.set("Content-Type", "application/json");
-    }
+  const token = getAuthToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  if (init.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     method,
     headers,
-    credentials: "include",
   });
 
   if (!response.ok) {
@@ -120,9 +153,12 @@ export class ApiError extends Error {
 export const api = {
   base: API_BASE,
   googleLoginUrl: `${API_BASE}/oauth2/authorization/google`,
-  logoutUrl: `${API_BASE}/logout`,
 
   me: () => apiFetch<Me>("/api/me"),
+  logout: async () => {
+    await apiFetch<void>("/api/logout", { method: "POST" }).catch(() => {});
+    clearAuthToken();
+  },
   meta: () => apiFetch<Meta>("/api/dashboard/meta"),
 
   commands: (guildId: string) =>

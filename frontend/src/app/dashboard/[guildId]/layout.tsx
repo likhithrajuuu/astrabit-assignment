@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useParams } from "next/navigation";
+import { usePathname, useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, type Me } from "@/lib/api";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
@@ -12,6 +12,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const params = useParams<{ guildId: string }>();
   const guildId = params.guildId;
+  const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
 
   useEffect(() => {
@@ -20,6 +21,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       .then(setMe)
       .catch(() => setMe({ authenticated: false }));
   }, []);
+
+  async function signOut() {
+    await api.logout();
+    router.push("/");
+  }
 
   if (me === null) {
     return (
@@ -69,12 +75,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </Link>
             <span className="text-neutral-700">|</span>
             <span className="text-xs text-neutral-400">{me.email}</span>
-            <a
-              href={api.logoutUrl}
+            <button
+              onClick={signOut}
               className="text-xs font-medium text-neutral-500 hover:text-neutral-300"
             >
               Sign out
-            </a>
+            </button>
           </div>
         </div>
         <div className="mx-auto flex max-w-5xl gap-1 px-6 pb-3">
